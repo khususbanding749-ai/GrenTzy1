@@ -4925,3 +4925,137 @@ bot.onText(/^\/repofiles(?:\s+(\S+))?$/, async (msg, match) => {
     bot.sendMessage(chatId, `❌ Gagal mengambil daftar repository: ${error.message}`);
   }
 });
+
+// ============================================================
+//              COMMAND /uploadfile (UPLOAD KE GITHUB)
+// ============================================================
+bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const senderId = msg.from.id;
+
+  // Hanya owner yang boleh upload
+  if (!isOwner(senderId)) {
+    return bot.sendMessage(chatId, "❌ Hanya owner yang bisa upload file ke GitHub.");
+  }
+
+  const replyMsg = msg.reply_to_message;
+  if (!replyMsg) {
+    return bot.sendMessage(chatId,
+      "❌ Reply ke file yang ingin diupload.\n" +
+      "Contoh: /uploadfile folder/file.js (reply ke file)"
+    );
+  }
+
+  // Ambil file dari reply (document, photo, video, audio, dll)
+  let fileId = null;
+  let fileName = null;
+  let mimeType = null;
+
+  if (replyMsg.document) {
+    fileId = replyMsg.document.file_id;
+    fileName = replyMsg.document.file_name || 'document';
+    mimeType = replyMsg.document.mime_type;
+  } else if (replyMsg.photo) {
+    // Ambil foto dengan resolusi tertinggi
+    const photo = replyMsg.photo[replyMsg.photo.length - 1];
+    fileId = photo.file_id;
+    fileName = 'photo.jpg';
+    mimeType = 'image/jpeg';
+  } else if (replyMsg.video) {
+    fileId = replyMsg.video.file_id;
+    fileName = replyMsg.video.file_name || 'video.mp4';
+    mimeType = replyMsg.video.mime_type;
+  } else if (replyMsg.audio) {
+    fileId = replyMsg.audio.file_id;
+    fileName = replyMsg.audio.file_name || 'audio.mp3';
+    mimeType = replyMsg.audio.mime_type;
+  } else if (replyMsg.voice) {
+    fileId = replyMsg.voice.file_id;
+    fileName = 'voice.ogg';
+    mimeType = 'audio/ogg';
+  } else if (replyMsg.animation) {
+    fileId = replyMsg.animation.file_id;
+    fileName = replyMsg.animation.file_name || 'animation.gif';
+    mimeType = replyMsg.animation.mime_type;
+  } else {
+    return bot.sendMessage(chatId, "❌ File tidak didukung. Kirim file, foto, video, audio, atau dokumen.");
+  }
+
+  // Ambil path dari argumen (opsional)
+  let userPath = match[1] ? match[1].trim() : '';
+  if (!userPath) {
+    // Jika tidak ada path, gunakan nama file dari Telegram
+    userPath = fileName;
+  }
+
+  // Tentukan repo
+  const repoOwner = "khususbanding749-ai";
+  const repoName = "GrenTzy1";
+  const branch = "main";
+  const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${encodeURIComponent(userPath)}`;
+
+  try {
+    // Kirim status proses
+    const statusMsg = await bot.sendMessage(chatId, `⏳ Uploading \`${fileName}\` ke \`${userPath}\`...`, { parse_mode: 'Markdown' });
+
+    // Download file dari Telegram
+    const file = await bot.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+
+    const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+    const contentBase64 = Buffer.from(response.data, 'binary').toString('base64');
+
+    // Cek apakah file sudah ada di GitHub (untuk mendapatkan SHA jika update)
+    let sha = null;
+    try {
+      const checkRes = await axios.get(apiUrl, {
+        headers: {
+          'Authorization': `token ${github.token}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      sha = checkRes.data.sha;
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        // File belum ada, akan dibuat baru
+        sha = null;
+      } else {
+        throw err;
+      }
+    }
+
+    // Upload/update file ke GitHub
+    const payload = {
+      message: `Upload file ${userPath} via bot`,
+      content: contentBase64,
+      branch: branch
+    };
+    if (sha) {
+      payload.sha = sha;
+    }
+
+    const uploadRes = await axios.put(apiUrl, payload, {
+      headers: {
+        'Authorization': `token ${github.token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+
+    const commitUrl = uploadRes.data.content.html_url || uploadRes.data.content.url;
+
+    await bot.editMessageText(
+      `✅ File \`${userPath}\` berhasil diupload ke GitHub!\n` +
+      `📦 Ukuran: ${(response.data.length / 1024).toFixed(2)} KB\n` +
+      `🔗 [Lihat file](${commitUrl})`,
+      {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: 'Markdown'
+      }
+    );
+
+  } catch (error) {
+    console.error('Upload error:', error.message);
+    bot.sendMessage(chatId, `❌ Gagal upload file: ${error.message}`);
+  }
+});
