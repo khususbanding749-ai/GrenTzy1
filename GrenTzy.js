@@ -4938,6 +4938,11 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     return bot.sendMessage(chatId, "❌ Hanya owner yang bisa upload file ke GitHub.");
   }
 
+  // Cek token GitHub
+  if (!github || !github.token) {
+    return bot.sendMessage(chatId, "❌ Token GitHub tidak ditemukan. Periksa konfigurasi.");
+  }
+
   const replyMsg = msg.reply_to_message;
   if (!replyMsg) {
     return bot.sendMessage(chatId,
@@ -4946,7 +4951,7 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     );
   }
 
-  // Ambil file dari reply (document, photo, video, audio, dll)
+  // Ambil file dari reply
   let fileId = null;
   let fileName = null;
   let mimeType = null;
@@ -4956,7 +4961,6 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     fileName = replyMsg.document.file_name || 'document';
     mimeType = replyMsg.document.mime_type;
   } else if (replyMsg.photo) {
-    // Ambil foto dengan resolusi tertinggi
     const photo = replyMsg.photo[replyMsg.photo.length - 1];
     fileId = photo.file_id;
     fileName = 'photo.jpg';
@@ -4981,10 +4985,13 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     return bot.sendMessage(chatId, "❌ File tidak didukung. Kirim file, foto, video, audio, atau dokumen.");
   }
 
+  if (!fileId) {
+    return bot.sendMessage(chatId, "❌ Gagal mengambil file dari pesan.");
+  }
+
   // Ambil path dari argumen (opsional)
   let userPath = match[1] ? match[1].trim() : '';
   if (!userPath) {
-    // Jika tidak ada path, gunakan nama file dari Telegram
     userPath = fileName;
   }
 
@@ -4995,7 +5002,6 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
   const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${encodeURIComponent(userPath)}`;
 
   try {
-    // Kirim status proses
     const statusMsg = await bot.sendMessage(chatId, `⏳ Uploading \`${fileName}\` ke \`${userPath}\`...`, { parse_mode: 'Markdown' });
 
     // Download file dari Telegram
@@ -5005,7 +5011,7 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
     const contentBase64 = Buffer.from(response.data, 'binary').toString('base64');
 
-    // Cek apakah file sudah ada di GitHub (untuk mendapatkan SHA jika update)
+    // Cek apakah file sudah ada di GitHub
     let sha = null;
     try {
       const checkRes = await axios.get(apiUrl, {
@@ -5017,7 +5023,6 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
       sha = checkRes.data.sha;
     } catch (err) {
       if (err.response && err.response.status === 404) {
-        // File belum ada, akan dibuat baru
         sha = null;
       } else {
         throw err;
@@ -5056,6 +5061,14 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
 
   } catch (error) {
     console.error('Upload error:', error.message);
-    bot.sendMessage(chatId, `❌ Gagal upload file: ${error.message}`);
+    let errorMsg = `❌ Gagal upload file: ${error.message}`;
+    if (error.response && error.response.status === 401) {
+      errorMsg = "❌ Token GitHub tidak valid atau tidak memiliki akses write.";
+    } else if (error.response && error.response.status === 404) {
+      errorMsg = "❌ Repository atau path tidak ditemukan.";
+    } else if (error.response && error.response.data && error.response.data.message) {
+      errorMsg = `❌ GitHub error: ${error.response.data.message}`;
+    }
+    bot.sendMessage(chatId, errorMsg);
   }
 });
