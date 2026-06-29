@@ -94,13 +94,19 @@ const FormData = require('form-data');
 const moment = require('moment-timezone');
 const vm = require('vm');
 const { fileTypeFromBuffer } = require('file-type');
+
+const config = require("./config.js");
+
 const github = {
-  token: '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',
+  token: config.GITHUB_TOKEN || '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',
   repoOwner: 'khususbanding749-ai',
   repoName: 'GrenTzy1',
   akunPath: 'akun.json',
   tokenPath: 'token.json'
 };
+
+// Jadikan global agar bisa diakses di semua handler
+global.github = github;
 
 try {
   if (
@@ -165,7 +171,6 @@ try {
 }
 console.log("✅ Proteksi Anti Bypass Active ./Xata");
 const chalk = require("chalk"); 
-const config = require("./config.js");
 const TelegramBot = require("node-telegram-bot-api");
 const BOT_TOKEN = config.BOT_TOKEN;
 const OWNER_ID = config.OWNER_ID;
@@ -805,7 +810,7 @@ async function processNextTestFunc(chatId) {
 
 // KONFIGURASI GITHUB
 const GITHUB_API_URL = "https://api.github.com/repos/khususbanding749-ai/GrenTzy1/contents/token.json";
-const GITHUB_PERSONAL_ACCESS_TOKEN = "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";
+const GITHUB_PERSONAL_ACCESS_TOKEN = "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";
 
 
 async function restartBot(chatId, reason = "Restart perintah owner") {
@@ -4705,9 +4710,6 @@ bot.onText(/\/checkupdate/, async (msg) => {
   }
 });
 
-// ============================================================
-//              COMMAND /checkfile (CEK FILE DI GITHUB)
-// ============================================================
 bot.onText(/\/checkfile(?:\s+(\S+))?/, async (msg, match) => {
   const chatId = msg.chat.id;
   const senderId = msg.from.id;
@@ -4770,9 +4772,6 @@ bot.onText(/\/checkfile(?:\s+(\S+))?/, async (msg, match) => {
   }
 });
 
-// ============================================================
-//              COMMAND /listrepo (LIHAT ISI REPOSITORY)
-// ============================================================
 bot.onText(/^\/listrepo(?:\s+(\S+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const senderId = msg.from.id;
@@ -4848,9 +4847,6 @@ bot.onText(/^\/listrepo(?:\s+(\S+))?$/, async (msg, match) => {
   }
 });
 
-// ============================================================
-//              ALIAS /repofiles (SAMA DENGAN /listrepo)
-// ============================================================
 bot.onText(/^\/repofiles(?:\s+(\S+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const senderId = msg.from.id;
@@ -4926,23 +4922,16 @@ bot.onText(/^\/repofiles(?:\s+(\S+))?$/, async (msg, match) => {
   }
 });
 
-// ============================================================
-//              COMMAND /uploadfile (UPLOAD KE GITHUB)
-// ============================================================
 bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
   const chatId = msg.chat.id;
   const senderId = msg.from.id;
 
-  // Hanya owner yang boleh upload
   if (!isOwner(senderId)) {
     return bot.sendMessage(chatId, "❌ Hanya owner yang bisa upload file ke GitHub.");
   }
 
-  // Cek token GitHub (pakai variable global)
-  if (!global.github || !global.github.token) {
-    return bot.sendMessage(chatId, "❌ Token GitHub tidak ditemukan. Tambahkan `github.token` di file utama.");
-  }
-
+  const GITHUB_TOKEN = config.GITHUB_TOKEN || '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';
+  
   const replyMsg = msg.reply_to_message;
   if (!replyMsg) {
     return bot.sendMessage(chatId,
@@ -4951,7 +4940,6 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     );
   }
 
-  // Ambil file dari reply
   let fileId = null;
   let fileName = null;
 
@@ -4975,14 +4963,13 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     fileId = replyMsg.animation.file_id;
     fileName = replyMsg.animation.file_name || 'animation.gif';
   } else {
-    return bot.sendMessage(chatId, "❌ File tidak didukung. Kirim file, foto, video, audio, atau dokumen.");
+    return bot.sendMessage(chatId, "❌ File tidak didukung.");
   }
 
   if (!fileId) {
-    return bot.sendMessage(chatId, "❌ Gagal mengambil file dari pesan.");
+    return bot.sendMessage(chatId, "❌ Gagal mengambil file.");
   }
 
-  // Ambil path dari argumen (opsional)
   let userPath = match[1] ? match[1].trim() : '';
   if (!userPath) {
     userPath = fileName;
@@ -4996,44 +4983,38 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
   try {
     const statusMsg = await bot.sendMessage(chatId, `⏳ Uploading \`${fileName}\` ke \`${userPath}\`...`, { parse_mode: 'Markdown' });
 
-    // Download file dari Telegram
     const file = await bot.getFile(fileId);
     const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
 
     const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
     const contentBase64 = Buffer.from(response.data, 'binary').toString('base64');
 
-    // Cek apakah file sudah ada di GitHub
+    // Cek file di GitHub
     let sha = null;
     try {
       const checkRes = await axios.get(apiUrl, {
         headers: {
-          'Authorization': `token ${global.github.token}`,
+          'Authorization': `token ${GITHUB_TOKEN}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
       sha = checkRes.data.sha;
     } catch (err) {
-      if (err.response && err.response.status === 404) {
-        sha = null;
-      } else {
+      if (err.response && err.response.status !== 404) {
         throw err;
       }
     }
 
-    // Upload/update file ke GitHub
     const payload = {
       message: `Upload file ${userPath} via bot`,
       content: contentBase64,
       branch: branch
     };
-    if (sha) {
-      payload.sha = sha;
-    }
+    if (sha) payload.sha = sha;
 
     const uploadRes = await axios.put(apiUrl, payload, {
       headers: {
-        'Authorization': `token ${global.github.token}`,
+        'Authorization': `token ${GITHUB_TOKEN}`,
         'Accept': 'application/vnd.github.v3+json'
       }
     });
@@ -5053,17 +5034,168 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
 
   } catch (error) {
     console.error('Upload error:', error.message);
-    let errorMsg = `❌ Gagal upload file: ${error.message}`;
+    let errorMsg = `❌ Gagal upload: ${error.message}`;
+    if (error.response?.status === 401) {
+      errorMsg = "❌ Token GitHub tidak valid atau expired. Buat token baru di GitHub → Settings → Tokens (scope: repo).";
+    }
+    bot.sendMessage(chatId, errorMsg);
+  }
+});
 
-    // Tangani error token
-    if (error.response && error.response.status === 401) {
-      errorMsg = "❌ Token GitHub tidak valid. Pastikan token memiliki scope `repo` dan masih aktif.";
-    } else if (error.response && error.response.status === 404) {
-      errorMsg = "❌ Repository atau path tidak ditemukan.";
-    } else if (error.response && error.response.data && error.response.data.message) {
-      errorMsg = `❌ GitHub error: ${error.response.data.message}`;
+// ============================================================
+//              COMMAND /deletefile (HAPUS FILE DARI GITHUB)
+// ============================================================
+bot.onText(/^\/deletefile(?:\s+(.+))?$/, async (msg, match) => {
+  const chatId = msg.chat.id;
+  const senderId = msg.from.id;
+
+  // Hanya owner yang boleh hapus
+  if (!isOwner(senderId)) {
+    return bot.sendMessage(chatId, "❌ Hanya owner yang bisa menghapus file dari GitHub.");
+  }
+
+  // Cek token GitHub (pakai variabel global atau lokal)
+  const GITHUB_TOKEN = config.GITHUB_TOKEN || github?.token;
+  if (!GITHUB_TOKEN) {
+    return bot.sendMessage(chatId, "❌ Token GitHub tidak ditemukan. Periksa config.js");
+  }
+   
+   const GITHUB_TOKEN = config.GITHUB_TOKEN || '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';
+
+  const filePath = match[1]?.trim();
+  if (!filePath) {
+    return bot.sendMessage(chatId,
+      "❌ Gunakan: /deletefile <path_file>\n" +
+      "Contoh: /deletefile folder/file.js\n\n" +
+      "📌 Untuk melihat daftar file, gunakan /listrepo"
+    );
+  }
+
+  const repoOwner = "khususbanding749-ai";
+  const repoName = "GrenTzy1";
+  const branch = "main";
+  const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${encodeURIComponent(filePath)}`;
+
+  try {
+    const statusMsg = await bot.sendMessage(chatId, `⏳ Mengecek file \`${filePath}\`...`, { parse_mode: 'Markdown' });
+
+    // 1. Ambil info file (untuk mendapatkan SHA)
+    let fileInfo;
+    try {
+      const checkRes = await axios.get(apiUrl, {
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      fileInfo = checkRes.data;
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        return bot.editMessageText(`❌ File \`${filePath}\` tidak ditemukan di repository.`, {
+          chat_id: chatId,
+          message_id: statusMsg.message_id,
+          parse_mode: 'Markdown'
+        });
+      }
+      throw err;
     }
 
+    // Jika path mengarah ke folder (bukan file)
+    if (Array.isArray(fileInfo)) {
+      return bot.editMessageText(`❌ \`${filePath}\` adalah folder, bukan file. Gunakan path ke file spesifik.`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: 'Markdown'
+      });
+    }
+
+    const sha = fileInfo.sha;
+    const fileName = fileInfo.name || filePath.split('/').pop();
+
+    // 2. Konfirmasi sebelum hapus
+    const confirmMsg = await bot.sendMessage(chatId,
+      `⚠️ *Yakin ingin menghapus file ini?*\n\n` +
+      `📄 File: \`${filePath}\`\n` +
+      `📦 Ukuran: ${(fileInfo.size / 1024).toFixed(2)} KB\n` +
+      `🔑 SHA: \`${sha.slice(0, 10)}...\`\n\n` +
+      `Balas dengan \`ya\` untuk menghapus, atau \`tidak\` untuk membatalkan.`,
+      { parse_mode: 'Markdown' }
+    );
+
+    // 3. Tunggu respon user
+    const filter = (responseMsg) => {
+      return responseMsg.chat.id === chatId &&
+             responseMsg.reply_to_message &&
+             responseMsg.reply_to_message.message_id === confirmMsg.message_id &&
+             ['ya', 'tidak', 'yes', 'no'].includes(responseMsg.text?.toLowerCase());
+    };
+
+    try {
+      const collected = await new Promise((resolve) => {
+        bot.once('message', (responseMsg) => {
+          if (filter(responseMsg)) {
+            resolve(responseMsg);
+          } else {
+            // Jika tidak memenuhi filter, tunggu lagi (timeout akan menangani)
+          }
+        });
+        // Timeout 30 detik
+        setTimeout(() => resolve(null), 30000);
+      });
+
+      if (!collected) {
+        return bot.sendMessage(chatId, "⏰ Waktu habis. Penghapusan dibatalkan.");
+      }
+
+      const answer = collected.text.toLowerCase();
+      if (answer !== 'ya' && answer !== 'yes') {
+        return bot.sendMessage(chatId, "❌ Penghapusan dibatalkan.");
+      }
+
+      // 4. Hapus file
+      await bot.editMessageText(`⏳ Menghapus \`${filePath}\`...`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: 'Markdown'
+      });
+
+      await axios.delete(apiUrl, {
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json'
+        },
+        data: {
+          message: `Delete file ${filePath} via bot`,
+          sha: sha,
+          branch: branch
+        }
+      });
+
+      await bot.editMessageText(
+        `✅ File \`${filePath}\` berhasil dihapus dari GitHub!\n` +
+        `📄 Nama: ${fileName}\n` +
+        `🔗 Repository: ${repoOwner}/${repoName}`,
+        {
+          chat_id: chatId,
+          message_id: statusMsg.message_id,
+          parse_mode: 'Markdown'
+        }
+      );
+
+    } catch (timeoutError) {
+      // Jika timeout, sudah ditangani di atas
+    }
+
+  } catch (error) {
+    console.error('Delete file error:', error.message);
+    let errorMsg = `❌ Gagal menghapus file: ${error.message}`;
+    if (error.response?.status === 401) {
+      errorMsg = "❌ Token GitHub tidak valid atau expired. Buat token baru dengan scope `repo`.";
+    } else if (error.response?.status === 404) {
+      errorMsg = `❌ File \`${filePath}\` tidak ditemukan.`;
+    } else if (error.response?.data?.message) {
+      errorMsg = `❌ GitHub error: ${error.response.data.message}`;
+    }
     bot.sendMessage(chatId, errorMsg);
   }
 });
