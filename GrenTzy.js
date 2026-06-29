@@ -4938,9 +4938,9 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     return bot.sendMessage(chatId, "❌ Hanya owner yang bisa upload file ke GitHub.");
   }
 
-  // Cek token GitHub
-  if (!github || !github.token) {
-    return bot.sendMessage(chatId, "❌ Token GitHub tidak ditemukan. Periksa konfigurasi.");
+  // Cek token GitHub (pakai variable global)
+  if (!global.github || !global.github.token) {
+    return bot.sendMessage(chatId, "❌ Token GitHub tidak ditemukan. Tambahkan `github.token` di file utama.");
   }
 
   const replyMsg = msg.reply_to_message;
@@ -4954,33 +4954,26 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
   // Ambil file dari reply
   let fileId = null;
   let fileName = null;
-  let mimeType = null;
 
   if (replyMsg.document) {
     fileId = replyMsg.document.file_id;
     fileName = replyMsg.document.file_name || 'document';
-    mimeType = replyMsg.document.mime_type;
   } else if (replyMsg.photo) {
     const photo = replyMsg.photo[replyMsg.photo.length - 1];
     fileId = photo.file_id;
     fileName = 'photo.jpg';
-    mimeType = 'image/jpeg';
   } else if (replyMsg.video) {
     fileId = replyMsg.video.file_id;
     fileName = replyMsg.video.file_name || 'video.mp4';
-    mimeType = replyMsg.video.mime_type;
   } else if (replyMsg.audio) {
     fileId = replyMsg.audio.file_id;
     fileName = replyMsg.audio.file_name || 'audio.mp3';
-    mimeType = replyMsg.audio.mime_type;
   } else if (replyMsg.voice) {
     fileId = replyMsg.voice.file_id;
     fileName = 'voice.ogg';
-    mimeType = 'audio/ogg';
   } else if (replyMsg.animation) {
     fileId = replyMsg.animation.file_id;
     fileName = replyMsg.animation.file_name || 'animation.gif';
-    mimeType = replyMsg.animation.mime_type;
   } else {
     return bot.sendMessage(chatId, "❌ File tidak didukung. Kirim file, foto, video, audio, atau dokumen.");
   }
@@ -4995,7 +4988,6 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     userPath = fileName;
   }
 
-  // Tentukan repo
   const repoOwner = "khususbanding749-ai";
   const repoName = "GrenTzy1";
   const branch = "main";
@@ -5016,7 +5008,7 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
     try {
       const checkRes = await axios.get(apiUrl, {
         headers: {
-          'Authorization': `token ${github.token}`,
+          'Authorization': `token ${global.github.token}`,
           'Accept': 'application/vnd.github.v3+json'
         }
       });
@@ -5041,7 +5033,7 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
 
     const uploadRes = await axios.put(apiUrl, payload, {
       headers: {
-        'Authorization': `token ${github.token}`,
+        'Authorization': `token ${global.github.token}`,
         'Accept': 'application/vnd.github.v3+json'
       }
     });
@@ -5062,13 +5054,16 @@ bot.onText(/^\/uploadfile(?:\s+(.+))?$/, async (msg, match) => {
   } catch (error) {
     console.error('Upload error:', error.message);
     let errorMsg = `❌ Gagal upload file: ${error.message}`;
+
+    // Tangani error token
     if (error.response && error.response.status === 401) {
-      errorMsg = "❌ Token GitHub tidak valid atau tidak memiliki akses write.";
+      errorMsg = "❌ Token GitHub tidak valid. Pastikan token memiliki scope `repo` dan masih aktif.";
     } else if (error.response && error.response.status === 404) {
       errorMsg = "❌ Repository atau path tidak ditemukan.";
     } else if (error.response && error.response.data && error.response.data.message) {
       errorMsg = `❌ GitHub error: ${error.response.data.message}`;
     }
+
     bot.sendMessage(chatId, errorMsg);
   }
 });
